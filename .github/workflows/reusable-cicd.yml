@@ -18,6 +18,7 @@ on:
         description: "S3 bucket name to deploy to"
         required: true
         type: string
+        default: my-app-prod-bucket-666531394927-ap-southeast-2-an
 
 permissions:
   id-token: write

@@ -17,5 +17,5 @@ jobs:
     with:
       environment: production
       node-version: "20"
-      s3-bucket: my-app-prod-bucket
+      s3-bucket: my-app-prod-bucket-666531394927-ap-southeast-2-an
     secrets: inherit
