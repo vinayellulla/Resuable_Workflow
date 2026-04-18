@@ -1,5 +1,5 @@
 # ============================================================
-# Caller Workflow — references the reusable pipeline
+# Caller Workflow
 # Location: .github/workflows/main.yml
 # ============================================================
 
@@ -10,50 +10,36 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
 
-  # ── Deploy to Dev on every push to develop ───────────────
+  # ── Deploy to Dev (manual trigger only) ──────────────────
   deploy-dev:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
     with:
       environment: dev
       node-version: "20"
-      aws-region: ap-southeast-2
-      s3-bucket: my-app-dev-bucket-123       # for frontend / static
-      # eb-app-name: my-app              # uncomment for Elastic Beanstalk
-      # eb-env-name: my-app-dev-env
+      s3-bucket: my-app-dev-bucket-123
     secrets: inherit
 
-  # ── Deploy to Staging on PR to main ──────────────────────
+  # ── Deploy to Staging on PR ───────────────────────────────
   deploy-staging:
     if: github.event_name == 'pull_request'
     uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
     with:
       environment: staging
       node-version: "20"
-      aws-region: ap-southeast-2
       s3-bucket: my-app-staging-bucket
     secrets: inherit
 
   # ── Deploy to Production on push to main ─────────────────
   deploy-production:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
     with:
       environment: production
       node-version: "20"
-      aws-region: ap-southeast-2
       s3-bucket: my-app-prod-bucket
     secrets: inherit
-
-  # ── Use the output from a deploy job ─────────────────────
-  notify:
-    runs-on: ubuntu-latest
-    needs: deploy-production
-    if: always()
-    steps:
-      - name: Print deployed URL
-        run: echo "App deployed to ${{ needs.deploy-production.outputs.deployed-url }}"
