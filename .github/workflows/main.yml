@@ -1,8 +1,3 @@
-# ============================================================
-# Caller Workflow
-# Location: .github/workflows/main.yml
-# ============================================================
-
 name: Main CI/CD
 
 on:
@@ -13,30 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-
-  # ── Deploy to Dev (manual trigger only) ──────────────────
-  deploy-dev:
-    if: github.event_name == 'workflow_dispatch'
-    uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
-    with:
-      environment: dev
-      node-version: "20"
-      s3-bucket: my-app-dev-bucket-123
-    secrets: inherit
-
-  # ── Deploy to Staging on PR ───────────────────────────────
-  deploy-staging:
-    if: github.event_name == 'pull_request'
-    uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
-    with:
-      environment: staging
-      node-version: "20"
-      s3-bucket: my-app-staging-bucket
-    secrets: inherit
-
-  # ── Deploy to Production on push to main ─────────────────
-  deploy-production:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  deploy:
     uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
     with:
       environment: production
