@@ -7,15 +7,16 @@ name: Main CI/CD
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: 
 
 jobs:
 
   # ── Deploy to Dev on every push to develop ───────────────
   deploy-dev:
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main'
     uses: vinayellulla/Resuable_Workflow/.github/workflows/reusable-cicd.yml@main
     with:
       environment: dev
