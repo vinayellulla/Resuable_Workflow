@@ -1,216 +1,68 @@
-# ============================================================
-# Reusable Workflow: Node.js CI/CD Pipeline → AWS
-# Location: .github/workflows/reusable-cicd.yml
-#
-# HOW TO CALL THIS WORKFLOW from another workflow:
-#   jobs:
-#     deploy:
-#       uses: <org>/<repo>/.github/workflows/reusable-cicd.yml@main
-#       with:
-#         environment: production
-#         node-version: '20'
-#         aws-region: ap-southeast-2
-#       secrets: inherit
-# ============================================================
-
 name: Reusable Node.js CI/CD → AWS
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: "Deployment environment (dev / staging / production)"
+        description: "Deployment environment"
         required: true
         type: string
-        default: "dev"
 
       node-version:
-        description: "Node.js version to use"
+        description: "Node.js version"
         required: false
         type: string
         default: "20"
 
-      aws-region:
-        description: "AWS region to deploy to"
-        required: false
-        type: string
-        default: "ap-southeast-2"
-
-      working-directory:
-        description: "Working directory (monorepo support)"
-        required: false
-        type: string
-        default: "."
-
-      run-lint:
-        description: "Whether to run linting step"
-        required: false
-        type: boolean
-        default: true
-
-      run-tests:
-        description: "Whether to run test step"
-        required: false
-        type: boolean
-        default: true
-
       s3-bucket:
-        description: "S3 bucket name for artifact/static deployment (optional)"
-        required: false
+        description: "S3 bucket name to deploy to"
+        required: true
         type: string
-        default: ""
-
-      eb-app-name:
-        description: "Elastic Beanstalk application name (optional)"
-        required: false
-        type: string
-        default: ""
-
-      eb-env-name:
-        description: "Elastic Beanstalk environment name (optional)"
-        required: false
-        type: string
-        default: ""
-
-    secrets:
-      NPM_TOKEN:
-        description: "NPM auth token (if using private packages)"
-        required: false
-
-    outputs:
-      deployed-url:
-        description: "URL of the deployed application"
-        value: ${{ jobs.deploy.outputs.deployed-url }}
 
 permissions:
   id-token: write
   contents: read
 
-# ─────────────────────────────────────────
-# JOBS
-# ─────────────────────────────────────────
 jobs:
 
-  # ── 1. Install & Cache ────────────────────────────────────
-  install:
-    name: 📦 Install Dependencies
+  # ── 1. Install, Lint & Test ───────────────────────────────
+  test:
+    name: 🧪 Install, Lint & Test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js ${{ inputs.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
           cache: "npm"
-          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-
-      # - name: Configure NPM token (private packages)
-      #   if: secrets.NPM_TOKEN != ''
-      #   run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
 
       - name: Install dependencies
-        run: npm ci --prefer-offline
+        run: npm ci
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: node-modules-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
-
-  # ── 2. Lint ───────────────────────────────────────────────
-  lint:
-    name: 🔍 Lint
-    runs-on: ubuntu-latest
-    needs: install
-    if: ${{ inputs.run-lint }}
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node-version }}
-
-      - name: Restore node_modules cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: node-modules-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Run ESLint
+      - name: Lint
         run: npm run lint
 
-  # ── 3. Test ───────────────────────────────────────────────
-  test:
-    name: 🧪 Test
-    runs-on: ubuntu-latest
-    needs: install
-    if: ${{ inputs.run-tests }}
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
+      - name: Run tests
+        run: npm test
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node-version }}
-
-      - name: Restore node_modules cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: node-modules-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
-
-      - name: Run tests with coverage
-        run: npm test -- --coverage --ci
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report-${{ inputs.environment }}
-          path: ${{ inputs.working-directory }}/coverage
-          retention-days: 7
-
-  # ── 4. Build ──────────────────────────────────────────────
+  # ── 2. Build ──────────────────────────────────────────────
   build:
     name: 🏗️ Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
-    # Run build even if lint/test are skipped
-    if: |
-      always() &&
-      (needs.lint.result == 'success' || needs.lint.result == 'skipped') &&
-      (needs.test.result == 'success' || needs.test.result == 'skipped')
-    defaults:
-      run:
-        working-directory: ${{ inputs.working-directory }}
-
+    needs: test
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
+          cache: "npm"
 
-      - name: Restore node_modules cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ inputs.working-directory }}/node_modules
-          key: node-modules-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json') }}
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build application
+      - name: Build
         run: npm run build
         env:
           NODE_ENV: production
@@ -219,30 +71,22 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ inputs.environment }}-${{ github.sha }}
-          path: |
-            ${{ inputs.working-directory }}/dist
-            ${{ inputs.working-directory }}/build
+          name: build-${{ github.sha }}
+          path: client/build
           retention-days: 1
 
-  # ── 5. Deploy ─────────────────────────────────────────────
+  # ── 3. Deploy ─────────────────────────────────────────────
   deploy:
-    name: 🚀 Deploy → AWS (${{ inputs.environment }})
+    name: 🚀 Deploy → ${{ inputs.environment }}
     runs-on: ubuntu-latest
     needs: build
     environment: ${{ inputs.environment }}
-
-    outputs:
-      deployed-url: ${{ steps.set-url.outputs.url }}
-
     steps:
-      - uses: actions/checkout@v4
-
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: build-${{ inputs.environment }}-${{ github.sha }}
-          path: ./dist
+          name: build-${{ github.sha }}
+          path: ./build
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -250,87 +94,6 @@ jobs:
           role-to-assume: arn:aws:iam::666531394927:role/GitHub-runners
           aws-region: ap-southeast-2
 
-      # ── Deploy to S3 (static / frontend) ──────────────────
       - name: Deploy to S3
-        if: ${{ inputs.s3-bucket != '' }}
         run: |
-          aws s3 sync ./dist s3://${{ inputs.s3-bucket }} \
-            --delete \
-            --cache-control "max-age=31536000,public" \
-            --exclude "*.html" \
-            --metadata-directive REPLACE
-
-          # HTML files: no-cache so browsers always fetch fresh
-          aws s3 sync ./dist s3://${{ inputs.s3-bucket }} \
-            --exclude "*" \
-            --include "*.html" \
-            --cache-control "no-cache,no-store,must-revalidate" \
-            --metadata-directive REPLACE
-
-      - name: Invalidate CloudFront cache
-        if: ${{ inputs.s3-bucket != '' }}
-        run: |
-          DISTRIBUTION_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Origins.Items[?DomainName=='${{ inputs.s3-bucket }}.s3.amazonaws.com']].Id | [0]" \
-            --output text)
-
-          if [ "$DISTRIBUTION_ID" != "None" ] && [ -n "$DISTRIBUTION_ID" ]; then
-            aws cloudfront create-invalidation \
-              --distribution-id "$DISTRIBUTION_ID" \
-              --paths "/*"
-            echo "CloudFront invalidation triggered for $DISTRIBUTION_ID"
-          else
-            echo "No CloudFront distribution found for this bucket, skipping."
-          fi
-
-      # ── Deploy to Elastic Beanstalk (backend / fullstack) ─
-      - name: Zip application for Elastic Beanstalk
-        if: ${{ inputs.eb-app-name != '' }}
-        run: |
-          zip -r deploy.zip ./dist ./package.json ./package-lock.json
-
-      - name: Upload to S3 for EB deployment
-        if: ${{ inputs.eb-app-name != '' }}
-        run: |
-          VERSION_LABEL="${{ inputs.environment }}-${{ github.sha }}"
-          EB_BUCKET="elasticbeanstalk-${{ inputs.aws-region }}-$(aws sts get-caller-identity --query Account --output text)"
-
-          aws s3 cp deploy.zip s3://$EB_BUCKET/${{ inputs.eb-app-name }}/$VERSION_LABEL.zip
-
-          aws elasticbeanstalk create-application-version \
-            --application-name "${{ inputs.eb-app-name }}" \
-            --version-label "$VERSION_LABEL" \
-            --source-bundle S3Bucket="$EB_BUCKET",S3Key="${{ inputs.eb-app-name }}/$VERSION_LABEL.zip"
-
-          aws elasticbeanstalk update-environment \
-            --environment-name "${{ inputs.eb-env-name }}" \
-            --version-label "$VERSION_LABEL"
-
-          echo "Waiting for EB environment to be Ready..."
-          aws elasticbeanstalk wait environment-updated \
-            --application-name "${{ inputs.eb-app-name }}" \
-            --environment-names "${{ inputs.eb-env-name }}"
-
-      - name: Set deployed URL output
-        id: set-url
-        run: |
-          if [ -n "${{ inputs.s3-bucket }}" ]; then
-            echo "url=https://${{ inputs.s3-bucket }}.s3-website-${{ inputs.aws-region }}.amazonaws.com" >> $GITHUB_OUTPUT
-          elif [ -n "${{ inputs.eb-app-name }}" ]; then
-            URL=$(aws elasticbeanstalk describe-environments \
-              --environment-names "${{ inputs.eb-env-name }}" \
-              --query "Environments[0].CNAME" --output text)
-            echo "url=http://$URL" >> $GITHUB_OUTPUT
-          else
-            echo "url=N/A" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Print deployment summary
-        run: |
-          echo "### ✅ Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "| Key | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| AWS Region  | ${{ inputs.aws-region }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit SHA  | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| URL         | ${{ steps.set-url.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+          aws s3 sync ./build s3://${{ inputs.s3-bucket }} --delete
